@@ -29,17 +29,22 @@
 #include <opencv2/core/core.hpp>
 
 #include <ros/ros.h>
-
+#include <fstream>
+#include "PreIntegrator.h"
 
 namespace RVIO
 {
+extern bool imageMotDet;
+extern ros::Time lastImgMotionTime;
 
 class Updater
 {
 public:
 
     Updater(const cv::FileStorage& fsSettings);
-
+    ~Updater() {
+        logfile.close();
+    }
     void update(Eigen::VectorXd& xk1k, Eigen::MatrixXd& Pk1k, std::vector<unsigned char>& vFeatTypesForUpdate,
                 std::vector<std::list<cv::Point2f> >& vlFeatMeasForUpdate);
 
@@ -50,6 +55,7 @@ public:
     // Outputs
     Eigen::VectorXd xk1k1;
     Eigen::MatrixXd Pk1k1;
+std::ofstream logfile;
 
 private:
 

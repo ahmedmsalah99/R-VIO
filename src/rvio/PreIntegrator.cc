@@ -26,9 +26,12 @@
 
 namespace RVIO
 {
-
+bool imuMotDet = true;
+bool noMotion = false;
+ros::Time lastImuMotionTime;
 PreIntegrator::PreIntegrator(const cv::FileStorage& fsSettings)
 {
+    lastImuMotionTime = ros::Time::now();
     mnGravity = fsSettings["IMU.nG"];
     mnSmallAngle = fsSettings["IMU.nSmallAngle"];
 
@@ -36,7 +39,8 @@ PreIntegrator::PreIntegrator(const cv::FileStorage& fsSettings)
     mnGyroRandomWalkSigma = fsSettings["IMU.sigma_wg"];
     mnAccelNoiseSigma = fsSettings["IMU.sigma_a"];
     mnAccelRandomWalkSigma = fsSettings["IMU.sigma_wa"];
-
+    logfile.open("imudata.csv");
+    logfile << "w,a,v,roll,pitch,yaw" << std::endl;
     ImuNoiseMatrix.setIdentity();
     ImuNoiseMatrix.block<3,3>(0,0) *= pow(mnGyroNoiseSigma,2);
     ImuNoiseMatrix.block<3,3>(3,3) *= pow(mnGyroRandomWalkSigma,2);
@@ -93,7 +97,9 @@ void PreIntegrator::propagate(Eigen::VectorXd& xkk,
     I.setIdentity();
 
     double Dt = 0;
-
+    double w_avg = 0;
+    double a_avg = 0;
+    
     for (std::list<ImuData*>::const_iterator lit=lImuData.begin();
          lit!=lImuData.end(); ++lit)
     {
@@ -176,11 +182,47 @@ void PreIntegrator::propagate(Eigen::VectorXd& xkk,
         vk = Rk*(vR-mnGravity*gR*Dt+dv);
         gk = Rk*gR;
         gk.normalize();
-    }
 
+        w_avg += wdt;
+        a_avg += a.norm() * dt;
+    }
+    w_avg /= Dt;
+    a_avg /= Dt;
+    Eigen::Vector3d euler = Rk.eulerAngles(2, 1, 0); // yaw (Z), pitch (Y), roll (X)
+    logfile << w_avg << "," << a_avg << "," << vk.norm() << "," << euler[2]  << "," << euler[1] << "," << euler[0] << std::endl;
+    if(w_avg < 0.05 && (a_avg < 9.9 && a_avg > 9.7) ){
+        imuMotDet = false;
+    }else{
+        imuMotDet = true;
+        lastImuMotionTime = ros::Time::now();
+    }
+    if(((ros::Time::now() - lastImuMotionTime).toSec() > 2.0) && ((ros::Time::now() - lastImgMotionTime).toSec() > 2.0)){
+        noMotion = true;
+        std::cout << "No motion mode!" << std::endl;
+    }else{
+        noMotion = false;
+    }
+    // if(!imuMotDet && !imageMotDet){
+    //     std::cout << "No motion agreed on!" << std::endl;
+    // }else if(!imuMotDet){
+    //     std::cout << "Imu No motion!" << std::endl;
+    // }else if(!imageMotDet){
+    //     std::cout << "Image No motion!" << std::endl;
+    // }else{
+    //     std::cout << "Motion for sure!" << std::endl;
+    // }
+    // if(w_avg < 0.05){
+    //     std::cout << "w confirming no motion" << std::endl;
+    // }
+    // if((a_avg < 9.85 && a_avg > 9.75)){
+    //     std::cout << "a confirming no motion" << std::endl;
+    // }
+    // std::cout << "image motion "<< imageMotDet << std::endl;
     xk1k = xkk;
     xk1k.block(10,0,4,1) = RotToQuat(Rk);
     xk1k.block(14,0,3,1) = pk;
+    if (noMotion)
+        vk *= 0;
     xk1k.block(17,0,3,1) = vk;
 
     int nCloneStates = (xkk.rows()-26)/7;

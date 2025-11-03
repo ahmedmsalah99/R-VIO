@@ -30,9 +30,9 @@
 namespace RVIO
 {
 
-CvScalar red = CV_RGB(255,64,64);
-CvScalar green = CV_RGB(64,255,64);
-CvScalar blue = CV_RGB(64,64,255);
+cv::Scalar red = CV_RGB(255,64,64);
+cv::Scalar green = CV_RGB(64,255,64);
+cv::Scalar blue = CV_RGB(64,64,255);
 
 Tracker::Tracker(const cv::FileStorage& fsSettings)
 {

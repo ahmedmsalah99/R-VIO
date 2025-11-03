@@ -26,17 +26,24 @@
 #include <Eigen/Core>
 
 #include "InputBuffer.h"
-
+#include <fstream>
+#include <Eigen/Geometry>
+#include "Updater.h"
 
 namespace RVIO
 {
+    extern bool imuMotDet ;
+    extern ros::Time lastImuMotionTime;
+    extern bool noMotion;
 
 class PreIntegrator
 {
 public:
 
     PreIntegrator(const cv::FileStorage& fsSettings);
-
+    ~PreIntegrator() {
+        logfile.close();
+    }
     void propagate(Eigen::VectorXd& xkk, Eigen::MatrixXd& Pkk, std::list<ImuData*>& lImuData);
 
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -46,7 +53,7 @@ public:
     // Outputs
     Eigen::VectorXd xk1k;
     Eigen::MatrixXd Pk1k;
-
+    std::ofstream logfile;
 private:
 
     double mnGravity;

@@ -30,15 +30,18 @@
 
 namespace RVIO
 {
-
+bool imageMotDet = true;
+ros::Time lastImgMotionTime;
 static int cloud_id = 0;
 std_msgs::ColorRGBA colorLandmark;
 geometry_msgs::Vector3 scaleLandmark;
 
 Updater::Updater(const cv::FileStorage& fsSettings)
 {
+    lastImgMotionTime = ros::Time::now();
     mnCamRate = fsSettings["Camera.fps"];
-
+    logfile.open("data.csv");
+    logfile << "value" << std::endl;
     const float nImageNoiseSigmaX = fsSettings["Camera.sigma_px"];
     const float nImageNoiseSigmaY = fsSettings["Camera.sigma_py"];
     mnImageNoiseSigma = std::max(nImageNoiseSigmaX, nImageNoiseSigmaY);
@@ -453,7 +456,19 @@ void Updater::update(Eigen::VectorXd& xk1k,
             continue;
         }
     }
-
+    if (r.size() == 0) { std::cerr << "r is empty\n"; }else{
+    logfile << r.cwiseAbs().maxCoeff() << std::endl;
+        // std::cout << " avg of r is "<< r.cwiseAbs().maxCoeff() << std::endl;
+        if(r.cwiseAbs().maxCoeff() < 0.004){
+            imageMotDet = false;
+            // std::cout << "image confirming no motion" << std::endl;
+        }else{
+            imageMotDet = true;
+            lastImgMotionTime = ros::Time::now();
+        }
+    }
+    // if(noMotion)
+    //     r*=0;
     // Visualize features in rviz
     mFeatPub.publish(cloud);
 
