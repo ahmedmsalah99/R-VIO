@@ -27,7 +27,10 @@
 
 #include <opencv2/core/core.hpp>
 
-#include <tf/transform_broadcaster.h>
+#include <tf2_ros/transform_broadcaster.h>
+#include <nav_msgs/msg/path.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 
 #include "Tracker.h"
 #include "Updater.h"
@@ -42,7 +45,7 @@ class System
 {
 public:
 
-    System(const std::string& strSettingsFile);
+    System(const std::string& strSettingsFile, rclcpp::Node::SharedPtr node);
 
     ~System();
 
@@ -92,10 +95,10 @@ private:
     PreIntegrator* mpPreIntegrator;
 
     // Interact with rviz
-    ros::NodeHandle mSystemNode;
-    ros::Publisher mPathPub;
-    ros::Publisher mOdomPub;
-    tf::TransformBroadcaster mTfPub;
+    rclcpp::Node::SharedPtr mSystemNode;
+    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr mPathPub;
+    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr mOdomPub;
+    std::shared_ptr<tf2_ros::TransformBroadcaster> mTfPub;
 };
 
 } // namespace RVIO

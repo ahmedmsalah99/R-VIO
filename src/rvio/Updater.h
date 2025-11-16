@@ -28,20 +28,21 @@
 
 #include <opencv2/core/core.hpp>
 
-#include <ros/ros.h>
+#include <rclcpp/rclcpp.hpp>
+#include <visualization_msgs/msg/marker.hpp>
 #include <fstream>
 #include "PreIntegrator.h"
 
 namespace RVIO
 {
 extern bool imageMotDet;
-extern ros::Time lastImgMotionTime;
+extern rclcpp::Time lastImgMotionTime;
 
 class Updater
 {
 public:
 
-    Updater(const cv::FileStorage& fsSettings);
+    Updater(const cv::FileStorage& fsSettings, rclcpp::Node::SharedPtr node);
     ~Updater() {
         // logfile.close();
     }
@@ -71,8 +72,8 @@ private:
     Eigen::Vector3d mtci;
 
     // Interact with rviz
-    ros::NodeHandle mUpdaterNode;
-    ros::Publisher mFeatPub;
+    rclcpp::Node::SharedPtr mUpdaterNode;
+    rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr mFeatPub;
     double mnPubRate;
     double imgErrorTh;
 };

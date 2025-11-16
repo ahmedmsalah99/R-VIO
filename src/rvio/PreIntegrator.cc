@@ -28,10 +28,11 @@ namespace RVIO
 {
 bool imuMotDet = true;
 bool noMotion = false;
-ros::Time lastImuMotionTime;
-PreIntegrator::PreIntegrator(const cv::FileStorage& fsSettings)
+rclcpp::Time lastImuMotionTime;
+PreIntegrator::PreIntegrator(const cv::FileStorage& fsSettings, rclcpp::Node::SharedPtr node)
+    : mPreIntegratorNode(node)
 {
-    lastImuMotionTime = ros::Time::now();
+    lastImuMotionTime = mPreIntegratorNode->now();
     mnGravity = fsSettings["IMU.nG"];
     mnSmallAngle = fsSettings["IMU.nSmallAngle"];
 
@@ -199,9 +200,9 @@ void PreIntegrator::propagate(Eigen::VectorXd& xkk,
         imuMotDet = false;
     }else{
         imuMotDet = true;
-        lastImuMotionTime = ros::Time::now();
+        lastImuMotionTime = mPreIntegratorNode->now();
     }
-    if(((ros::Time::now() - lastImuMotionTime).toSec() > waitTime) && ((ros::Time::now() - lastImgMotionTime).toSec() > waitTime)){
+    if(((mPreIntegratorNode->now() - lastImuMotionTime).seconds() > waitTime) && ((mPreIntegratorNode->now() - lastImgMotionTime).seconds() > waitTime)){
         noMotion = true;
         std::cout << "No motion mode!" << std::endl;
     }else{

@@ -20,13 +20,13 @@
 
 #include <fstream>
 
-#include <boost/thread.hpp>
-
-#include <ros/package.h>
-#include <nav_msgs/Path.h>
-#include <nav_msgs/Odometry.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <geometry_msgs/TransformStamped.h>
+#include <rclcpp/rclcpp.hpp>
+#include <nav_msgs/msg/path.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/transform_stamped.hpp>
+#include <tf2/LinearMath/Quaternion.h>
+#include <ament_index_cpp/get_package_share_directory.hpp>
 
 #include "System.h"
 #include "../util/Numerics.h"
@@ -35,13 +35,13 @@
 namespace RVIO
 {
 
-nav_msgs::Path path;
+nav_msgs::msg::Path path;
 
 std::ofstream fPoseResults;
 std::ofstream fTimeResults;
 
 
-System::System(const std::string& strSettingsFile)
+System::System(const std::string& strSettingsFile, rclcpp::Node::SharedPtr node)
 {
     // Output welcome message
     std::cout << "\n" <<
@@ -53,7 +53,7 @@ System::System(const std::string& strSettingsFile)
     cv::FileStorage fsSettings(strSettingsFile, cv::FileStorage::READ);
     if (!fsSettings.isOpened())
     {
-       ROS_ERROR("Failed to open settings file at: %s", strSettingsFile.c_str());
+       RCLCPP_ERROR(mSystemNode->get_logger(), "Failed to open settings file at: %s", strSettingsFile.c_str());
        exit(-1);
     }
 
@@ -82,7 +82,8 @@ System::System(const std::string& strSettingsFile)
 
     if (mbRecordOutputs)
     {
-        std::string pkg_path = ros::package::getPath("rvio");
+        // Get package share directory path
+        std::string pkg_path = ament_index_cpp::get_package_share_directory("rvio");
         fPoseResults.open(pkg_path+"/stamped_pose_ests.dat", std::ofstream::out);
         fTimeResults.open(pkg_path+"/time_cost.dat", std::ofstream::out);
     }
@@ -94,12 +95,14 @@ System::System(const std::string& strSettingsFile)
     mbIsReady = false;
 
     mpInputBuffer = new InputBuffer();
-    mpTracker = new Tracker(fsSettings);
-    mpUpdater = new Updater(fsSettings);
-    mpPreIntegrator = new PreIntegrator(fsSettings);
+    mpTracker = new Tracker(fsSettings, node);
+    mpUpdater = new Updater(fsSettings, node);
+    mpPreIntegrator = new PreIntegrator(fsSettings, node);
 
-    mPathPub = mSystemNode.advertise<nav_msgs::Path>("/rvio/trajectory", 1);
-    mOdomPub = mSystemNode.advertise<nav_msgs::Odometry>("/rvio/odometry", 1);
+    mSystemNode = node;
+    mPathPub = mSystemNode->create_publisher<nav_msgs::msg::Path>("/rvio/trajectory", 1);
+    mOdomPub = mSystemNode->create_publisher<nav_msgs::msg::Odometry>("/rvio/odometry", 1);
+    mTfPub = std::make_shared<tf2_ros::TransformBroadcaster>(mSystemNode);
 }
 
 
@@ -250,14 +253,14 @@ void System::MonoVIO()
 
     nImageCountAfterInit++;
 
-    ros::WallTime t1, t2, t3;
+    rclcpp::Time t1, t2, t3;
 
-    t1 = ros::WallTime::now();
+    t1 = mSystemNode->now();
 
     /* Visual tracking */
     mpTracker->track(pMeasurements.first->Image, pMeasurements.second);
 
-    t2 = ros::WallTime::now();
+    t2 = mSystemNode->now();
 
     /* Propagation */
     mpPreIntegrator->propagate(xkk, Pkk, pMeasurements.second);
@@ -364,7 +367,7 @@ void System::MonoVIO()
     xkk.block(10,0,4,1) = Eigen::Vector4d(0,0,0,1);
     xkk.block(14,0,3,1) = Eigen::Vector3d(0,0,0);
 
-    t3 = ros::WallTime::now();
+    t3 = mSystemNode->now();
 
     if (mbRecordOutputs)
     {
@@ -374,19 +377,19 @@ void System::MonoVIO()
         fPoseResults.flush();
 
         fTimeResults << nImageCountAfterInit << std::setprecision(19) << " "
-                     << 1e3*(t2.toSec()-t1.toSec()) << " "
-                     << 1e3*(t3.toSec()-t2.toSec()) << "\n";
+                     << 1e3*(t2.seconds()-t1.seconds()) << " "
+                     << 1e3*(t3.seconds()-t2.seconds()) << "\n";
         fTimeResults.flush();
     }
 
-    ROS_INFO("qkG: %5f, %5f, %5f, %5f", qkG(0), qkG(1), qkG(2), qkG(3));
-    ROS_INFO("pGk: %5f, %5f, %5f\n", pGk(0), pGk(1), pGk(2));
+    RCLCPP_INFO(mSystemNode->get_logger(), "qkG: %5f, %5f, %5f, %5f", qkG(0), qkG(1), qkG(2), qkG(3));
+    RCLCPP_INFO(mSystemNode->get_logger(), "pGk: %5f, %5f, %5f\n", pGk(0), pGk(1), pGk(2));
 
 
     /* Interact with ROS rviz */
     // Broadcast tf message
-    geometry_msgs::TransformStamped transformStamped;
-    transformStamped.header.stamp = ros::Time::now();
+    geometry_msgs::msg::TransformStamped transformStamped;
+    transformStamped.header.stamp = mSystemNode->now();
     transformStamped.header.frame_id = "world";
     transformStamped.child_frame_id = "imu";
     transformStamped.transform.translation.x = pGk(0);
@@ -397,11 +400,11 @@ void System::MonoVIO()
     transformStamped.transform.rotation.z = qkG(2);
     transformStamped.transform.rotation.w = qkG(3);
 
-    mTfPub.sendTransform(transformStamped);
+    mTfPub->sendTransform(transformStamped);
 
     // Broadcast odometry message
-    nav_msgs::Odometry odom;
-    odom.header.stamp = ros::Time::now();
+    nav_msgs::msg::Odometry odom;
+    odom.header.stamp = mSystemNode->now();
     odom.header.frame_id = "world";
     odom.pose.pose.position.x = pGk(0);
     odom.pose.pose.position.y = pGk(1);
@@ -415,10 +418,10 @@ void System::MonoVIO()
     odom.twist.twist.linear.y = vk(1);
     odom.twist.twist.linear.z = vk(2);
 
-    mOdomPub.publish(odom);
+    mOdomPub->publish(odom);
 
     // Visualize the trajectory
-    geometry_msgs::PoseStamped pose;
+    geometry_msgs::msg::PoseStamped pose;
     pose.header.frame_id = "world";
     pose.pose.position.x = pGk(0);
     pose.pose.position.y = pGk(1);
@@ -431,7 +434,7 @@ void System::MonoVIO()
     path.header.frame_id = "world";
     path.poses.push_back(pose);
 
-    mPathPub.publish(path);
+    mPathPub->publish(path);
 
     usleep(1000);
 }

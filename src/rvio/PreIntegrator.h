@@ -30,17 +30,19 @@
 #include <Eigen/Geometry>
 #include "Updater.h"
 
+#include <rclcpp/rclcpp.hpp>
+
 namespace RVIO
 {
     extern bool imuMotDet ;
-    extern ros::Time lastImuMotionTime;
+    extern rclcpp::Time lastImuMotionTime;
     extern bool noMotion;
 
 class PreIntegrator
 {
 public:
 
-    PreIntegrator(const cv::FileStorage& fsSettings);
+    PreIntegrator(const cv::FileStorage& fsSettings, rclcpp::Node::SharedPtr node);
     ~PreIntegrator() {
         // logfile.close();
     }
@@ -55,6 +57,7 @@ public:
     Eigen::MatrixXd Pk1k;
     std::ofstream logfile;
 private:
+    rclcpp::Node::SharedPtr mPreIntegratorNode;
 
     double mnGravity;
     double mnSmallAngle;

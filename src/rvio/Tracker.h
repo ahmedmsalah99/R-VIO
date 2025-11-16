@@ -29,7 +29,8 @@
 
 #include <opencv2/core/core.hpp>
 
-#include <ros/ros.h>
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/image.hpp>
 #include <cv_bridge/cv_bridge.h>
 
 #include "FeatureDetector.h"
@@ -43,7 +44,7 @@ class Tracker
 {
 public:
 
-    Tracker(const cv::FileStorage& fsSettings);
+    Tracker(const cv::FileStorage& fsSettings, rclcpp::Node::SharedPtr node);
 
     ~Tracker();
 
@@ -122,9 +123,9 @@ private:
     Ransac* mpRansac;
 
     // Interact with rviz
-    ros::NodeHandle mTrackerNode;
-    ros::Publisher mTrackPub;
-    ros::Publisher mNewerPub;
+    rclcpp::Node::SharedPtr mTrackerNode;
+    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr mTrackPub;
+    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr mNewerPub;
 };
 
 } // namespace RVIO

@@ -22,7 +22,7 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
 
-#include <sensor_msgs/Image.h>
+#include <sensor_msgs/msg/image.hpp>
 
 #include "Tracker.h"
 
@@ -34,7 +34,8 @@ cv::Scalar red = CV_RGB(255,64,64);
 cv::Scalar green = CV_RGB(64,255,64);
 cv::Scalar blue = CV_RGB(64,64,255);
 
-Tracker::Tracker(const cv::FileStorage& fsSettings)
+Tracker::Tracker(const cv::FileStorage& fsSettings, rclcpp::Node::SharedPtr node)
+    : mTrackerNode(node)
 {
     const float fx = fsSettings["Camera.fx"];
     const float fy = fsSettings["Camera.fy"];
@@ -85,8 +86,8 @@ Tracker::Tracker(const cv::FileStorage& fsSettings)
     mpFeatureDetector = new FeatureDetector(fsSettings);
     mpRansac = new Ransac(fsSettings);
 
-    mTrackPub = mTrackerNode.advertise<sensor_msgs::Image>("/rvio/track", 1);
-    mNewerPub = mTrackerNode.advertise<sensor_msgs::Image>("/rvio/newer", 1);
+    mTrackPub = mTrackerNode->create_publisher<sensor_msgs::msg::Image>("/rvio/track", 1);
+    mNewerPub = mTrackerNode->create_publisher<sensor_msgs::msg::Image>("/rvio/newer", 1);
 }
 
 
@@ -138,7 +139,7 @@ void Tracker::DisplayTrack(const cv::Mat& imIn,
                            std::vector<unsigned char>& vInlierFlag,
                            cv_bridge::CvImage& imOut)
 {
-    imOut.header = std_msgs::Header();
+    imOut.header = std_msgs::msg::Header();
     imOut.encoding = "bgr8";
 
     cvtColor(imIn, imOut.image, CV_GRAY2BGR);
@@ -163,7 +164,7 @@ void Tracker::DisplayNewer(const cv::Mat& imIn,
                            std::deque<cv::Point2f>& qNewFeats,
                            cv_bridge::CvImage& imOut)
 {
-    imOut.header = std_msgs::Header();
+    imOut.header = std_msgs::msg::Header();
     imOut.encoding = "bgr8";
 
     cvtColor(imIn, imOut.image, CV_GRAY2BGR);
@@ -208,7 +209,7 @@ void Tracker::track(const cv::Mat& im,
 
         if (mnFeatsToTrack==0)
         {
-            ROS_DEBUG("No features available to track.");
+            RCLCPP_DEBUG(mTrackerNode->get_logger(), "No features available to track.");
             return;
         }
 
@@ -245,7 +246,7 @@ void Tracker::track(const cv::Mat& im,
 
         if (vFeatsTracked.empty())
         {
-            ROS_DEBUG("No features tracked in current image.");
+            RCLCPP_DEBUG(mTrackerNode->get_logger(), "No features tracked in current image.");
             return;
         }
 
@@ -266,7 +267,7 @@ void Tracker::track(const cv::Mat& im,
         // Show the result in rviz
         cv_bridge::CvImage imTrack;
         DisplayTrack(im, mvFeatsToTrack, vFeatsTracked, vInlierFlag, imTrack);
-        mTrackPub.publish(imTrack.toImageMsg());
+        mTrackPub->publish(*imTrack.toImageMsg());
 
         // Prepare data for update
         mvFeatTypesForUpdate.clear();
@@ -353,7 +354,7 @@ void Tracker::track(const cv::Mat& im,
             // Show the result in rviz
             cv_bridge::CvImage imNewer;
             DisplayNewer(im, vTempFeats, qNewFeats, imNewer);
-            mNewerPub.publish(imNewer.toImageMsg());
+            mNewerPub->publish(*imNewer.toImageMsg());
 
             if (nNewFeats!=0)
             {

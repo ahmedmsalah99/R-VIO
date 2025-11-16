@@ -1,132 +1,166 @@
-/**
-* This file is part of R-VIO.
-*
-* Copyright (C) 2019 Zheng Huai <zhuai@udel.edu> and Guoquan Huang <ghuang@udel.edu>
-* For more information see <http://github.com/rpng/R-VIO> 
-*
-* R-VIO is free software: you can redistribute it and/or modify
-* it under the terms of the GNU General Public License as published by
-* the Free Software Foundation, either version 3 of the License, or
-* (at your option) any later version.
-*
-* R-VIO is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-* GNU General Public License for more details.
-*
-* You should have received a copy of the GNU General Public License
-* along with R-VIO. If not, see <http://www.gnu.org/licenses/>.
-*/
-
-#include <ros/ros.h>
-#include <sensor_msgs/Imu.h>
-#include <sensor_msgs/Image.h>
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/imu.hpp>
+#include <sensor_msgs/msg/image.hpp>
 #include <cv_bridge/cv_bridge.h>
-#include <eigen_conversions/eigen_msg.h>
-
 #include <opencv2/core/core.hpp>
 
 #include "rvio/System.h"
 
-
-class ImageGrabber
+class RVIONode : public rclcpp::Node
 {
 public:
-    ImageGrabber(RVIO::System* pSys) : mpSys(pSys) {}
-
-    void GrabImage(const sensor_msgs::ImageConstPtr& msg);
-
-    RVIO::System* mpSys;
-};
-
-
-class ImuGrabber
-{
-public:
-    ImuGrabber(RVIO::System* pSys) : mpSys(pSys) {}
-
-    void GrabImu(const sensor_msgs::ImuConstPtr& msg);
-
-    RVIO::System* mpSys;
-};
-
-
-void ImageGrabber::GrabImage(const sensor_msgs::ImageConstPtr& msg)
-{
-    static int lastseq = -1;
-    if ((int)msg->header.seq!=lastseq+1 && lastseq!=-1)
-        ROS_DEBUG("Image message drop! curr seq: %d expected seq: %d.", msg->header.seq, lastseq+1);
-    lastseq = msg->header.seq;
-
-    cv_bridge::CvImageConstPtr cv_ptr;
-    try
+    RVIONode(const std::string &config_path)
+        : Node("rvio"), config_path_(config_path)
     {
-        cv_ptr = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::MONO8);
+        using std::placeholders::_1;
+
+        // --- Callback groups ---
+        image_group_      = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+        imu_group_        = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+        processing_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+
+        rclcpp::SubscriptionOptions image_opts;
+        image_opts.callback_group = image_group_;
+
+        rclcpp::SubscriptionOptions imu_opts;
+        imu_opts.callback_group = imu_group_;
+
+        // --- QoS ---
+        rclcpp::QoS image_qos(10);
+        image_qos.best_effort();       // usually correct for images
+
+        rclcpp::QoS imu_qos(100);
+        imu_qos.reliable();            // IMU should be reliable
+
+        // --- Subscribers ---
+        image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
+            "/camera/image_raw",
+            image_qos,
+            std::bind(&RVIONode::GrabImage, this, _1),
+            image_opts);
+
+        imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
+            "/imu",
+            imu_qos,
+            std::bind(&RVIONode::GrabImu, this, _1),
+            imu_opts);
+
+
+        auto period = rclcpp::Duration::from_seconds(1.0 / 50);
+        processing_timer_ = rclcpp::create_timer(
+            this->get_node_base_interface(),         // node_base
+            this->get_node_timers_interface(),       // node_timers
+            this->get_clock(),                       // clock (so it can follow /clock)
+            period,                                  // rclcpp::Duration
+            std::bind(&RVIONode::ProcessVIO, this),
+            processing_group_                   // optional callback group
+        );
+        
+
+        RCLCPP_INFO(this->get_logger(), "RVIO Node initialized.");
     }
-    catch (cv_bridge::Exception& e)
+    void InitSystem()
     {
-        ROS_ERROR("cv_bridge exception: %s", e.what());
-        return;
+        Sys = std::make_shared<RVIO::System>(config_path_, this->shared_from_this());
+        RCLCPP_INFO(this->get_logger(), "RVIO System initialized.");
     }
 
-    RVIO::ImageData* pData = new RVIO::ImageData();
-    pData->Image = cv_ptr->image.clone();
-    pData->Timestamp = cv_ptr->header.stamp.toSec();
+private:
+    std::string config_path_;
+    std::shared_ptr<RVIO::System> Sys;
+    bool need_processing = false;
 
-    mpSys->PushImageData(pData);
+    // Callback groups
+    rclcpp::CallbackGroup::SharedPtr image_group_;
+    rclcpp::CallbackGroup::SharedPtr imu_group_;
+    rclcpp::CallbackGroup::SharedPtr processing_group_;
 
-    mpSys->MonoVIO();
-}
+    // Subscribers
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
 
+    // Processing timer
+    rclcpp::TimerBase::SharedPtr processing_timer_;
 
-void ImuGrabber::GrabImu(const sensor_msgs::ImuConstPtr& msg)
-{
-    static int lastseq = -1;
-    if ((int) msg->header.seq!=lastseq+1 && lastseq!=-1)
-        ROS_DEBUG("IMU message drop! curr seq: %d expected seq: %d.", msg->header.seq, lastseq+1);
-    lastseq = msg->header.seq;
+    // --- Subscriber Callbacks ---
+    void GrabImage(const sensor_msgs::msg::Image::SharedPtr msg)
+    {
+        cv_bridge::CvImageConstPtr cv_ptr;
+        try {
+            cv_ptr = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::MONO8);
+        }
+        catch (cv_bridge::Exception &e) {
+            RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
+            return;
+        }
 
-    Eigen::Vector3d angular_velocity;
-    tf::vectorMsgToEigen(msg->angular_velocity, angular_velocity);
+        auto *data = new RVIO::ImageData();
+        data->Image = cv_ptr->image.clone();
+        data->Timestamp = msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9;
 
-    Eigen::Vector3d linear_acceleration;
-    tf::vectorMsgToEigen(msg->linear_acceleration, linear_acceleration);
+        Sys->PushImageData(data);
+        need_processing = true;
+    }
 
-    double currtime = msg->header.stamp.toSec();
+    void GrabImu(const sensor_msgs::msg::Imu::SharedPtr msg)
+    {
+        auto *data = new RVIO::ImuData();
 
-    RVIO::ImuData* pData = new RVIO::ImuData();
-    pData->AngularVel = angular_velocity;
-    pData->LinearAccel = linear_acceleration;
-    pData->Timestamp = currtime;
+        data->AngularVel = Eigen::Vector3d(
+            msg->angular_velocity.x,
+            msg->angular_velocity.y,
+            msg->angular_velocity.z);
 
-    static double lasttime = -1;
-    if (lasttime!=-1)
-        pData->TimeInterval = currtime-lasttime;
-    else
-        pData->TimeInterval = 0;
-    lasttime = currtime;
+        data->LinearAccel = Eigen::Vector3d(
+            msg->linear_acceleration.x,
+            msg->linear_acceleration.y,
+            msg->linear_acceleration.z);
 
-    mpSys->PushImuData(pData);
-}
+        double t = msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9;
+
+        static double last = -1;
+        data->TimeInterval = (last < 0 ? 0 : t - last);
+        last = t;
+
+        data->Timestamp = t;
+        Sys->PushImuData(data);
+    }
+
+    // --- VIO processing thread implemented with a timer ---
+    void ProcessVIO()
+    {
+        if(need_processing){
+            
+            auto start = std::chrono::high_resolution_clock::now();
+            Sys->MonoVIO();
+            auto end = std::chrono::high_resolution_clock::now();
+            // Compute duration in milliseconds
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+            need_processing = false;
+            // Print time
+            RCLCPP_INFO(this->get_logger(), "MonoVIO took %ld ms", duration);
+        }
+    }
+};
 
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "rvio");
-    ros::start();
+    rclcpp::init(argc, argv);
 
-    RVIO::System Sys(argv[1]);
+    if (argc < 2) {
+        std::cerr << "Usage: rvio <config_file>" << std::endl;
+        return 1;
+    }
 
-    ImageGrabber igb1(&Sys);
-    ImuGrabber igb2(&Sys);
+    // You must use shared pointer creation because RVIONode
+    // uses shared_from_this() internally.
+    auto node = std::make_shared<RVIONode>(argv[1]);
+    node->InitSystem();
+    rclcpp::executors::MultiThreadedExecutor exec;
+    exec.add_node(node);
+    exec.spin();
 
-    ros::NodeHandle nodeHandler;
-    ros::Subscriber image_sub = nodeHandler.subscribe("/camera/image_raw", 10, &ImageGrabber::GrabImage, &igb1);
-    ros::Subscriber imu_sub = nodeHandler.subscribe("/imu", 100, &ImuGrabber::GrabImu, &igb2);
-
-    ros::spin();
-
-    ros::shutdown();
-
+    rclcpp::shutdown();
     return 0;
 }

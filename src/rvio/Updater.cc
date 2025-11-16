@@ -22,7 +22,7 @@
 
 #include <opencv2/core/eigen.hpp>
 
-#include <visualization_msgs/Marker.h>
+#include <visualization_msgs/msg/marker.hpp>
 
 #include "Updater.h"
 #include "../util/Numerics.h"
@@ -31,14 +31,15 @@
 namespace RVIO
 {
 bool imageMotDet = true;
-ros::Time lastImgMotionTime;
+rclcpp::Time lastImgMotionTime;
 static int cloud_id = 0;
-std_msgs::ColorRGBA colorLandmark;
-geometry_msgs::Vector3 scaleLandmark;
+std_msgs::msg::ColorRGBA colorLandmark;
+geometry_msgs::msg::Vector3 scaleLandmark;
 
-Updater::Updater(const cv::FileStorage& fsSettings)
+Updater::Updater(const cv::FileStorage& fsSettings, rclcpp::Node::SharedPtr node)
+    : mUpdaterNode(node)
 {
-    lastImgMotionTime = ros::Time::now();
+    lastImgMotionTime = mUpdaterNode->now();
     mnCamRate = fsSettings["Camera.fps"];
     // logfile.open("data.csv");
     // logfile << "value" << std::endl;
@@ -58,7 +59,7 @@ Updater::Updater(const cv::FileStorage& fsSettings)
     xk1k1.setZero(26,1);
     Pk1k1.setZero(24,24);
 
-    mFeatPub = mUpdaterNode.advertise<visualization_msgs::Marker>("/rvio/landmarks", 1);
+    mFeatPub = mUpdaterNode->create_publisher<visualization_msgs::msg::Marker>("/rvio/landmarks", 1);
     mnPubRate = fsSettings["Landmark.nPubRate"];
 
     scaleLandmark.x = fsSettings["Landmark.nScale"];
@@ -80,16 +81,16 @@ void Updater::update(Eigen::VectorXd& xk1k,
                      std::vector<std::list<cv::Point2f> >& vlFeatMeasForUpdate)
 {
     // Interact with ROS rviz
-    visualization_msgs::Marker cloud;
+    visualization_msgs::msg::Marker cloud;
     cloud.header.frame_id = "imu";
     cloud.ns = "points";
     cloud.id = ++cloud_id;
     cloud.color = colorLandmark;
     cloud.scale = scaleLandmark;
     cloud.pose.orientation.w = 1.0;
-    cloud.lifetime = ros::Duration(1/mnPubRate);
-    cloud.action = visualization_msgs::Marker::ADD;
-    cloud.type = visualization_msgs::Marker::POINTS;
+    cloud.lifetime = rclcpp::Duration::from_seconds(1.0/mnPubRate);
+    cloud.action = visualization_msgs::msg::Marker::ADD;
+    cloud.type = visualization_msgs::msg::Marker::POINTS;
 
     // Number of features
     int nFeat = (int)vFeatTypesForUpdate.size();
@@ -158,7 +159,7 @@ void Updater::update(Eigen::VectorXd& xk1k,
 
         if (fabs(phi)>.5*3.14 || fabs(psi)>.5*3.14)
         {
-            ROS_DEBUG("Invalid inverse-depth feature estimate (0)!");
+            RCLCPP_DEBUG(mUpdaterNode->get_logger(), "Invalid inverse-depth feature estimate (0)!");
             continue;
         }
 
@@ -269,7 +270,7 @@ void Updater::update(Eigen::VectorXd& xk1k,
 
         if (fabs(phi)>.5*3.14 || fabs(psi)>.5*3.14 || std::isinf(rho) || rho<0)
         {
-            ROS_DEBUG("Invalid inverse-depth feature estimate (1)!");
+            RCLCPP_DEBUG(mUpdaterNode->get_logger(), "Invalid inverse-depth feature estimate (1)!");
             continue;
         }
 
@@ -378,7 +379,7 @@ void Updater::update(Eigen::VectorXd& xk1k,
 
         if (tempHf.col(N-1).norm()<1e-4)
         {
-            ROS_DEBUG("Hf is rank deficient!");
+            RCLCPP_DEBUG(mUpdaterNode->get_logger(), "Hf is rank deficient!");
             N--;
         }
 
@@ -445,7 +446,7 @@ void Updater::update(Eigen::VectorXd& xk1k,
                 Eigen::Vector3d pf1 = mRic*pfc+mtic;
                 Eigen::Vector3d pfk = Rk*pf1+tk;
 
-                geometry_msgs::Point feat;
+                geometry_msgs::msg::Point feat;
                 feat.x = pfk(0);
                 feat.y = pfk(1);
                 feat.z = pfk(2);
@@ -454,7 +455,7 @@ void Updater::update(Eigen::VectorXd& xk1k,
         }
         else
         {
-            ROS_DEBUG("Failed in Mahalanobis distance test!");
+            RCLCPP_DEBUG(mUpdaterNode->get_logger(), "Failed in Mahalanobis distance test!");
             continue;
         }
     }
@@ -466,11 +467,11 @@ void Updater::update(Eigen::VectorXd& xk1k,
             // std::cout << "image confirming no motion" << std::endl;
         }else{
             imageMotDet = true;
-            lastImgMotionTime = ros::Time::now();
+            lastImgMotionTime = mUpdaterNode->now();
         }
     }
     // Visualize features in rviz
-    mFeatPub.publish(cloud);
+    mFeatPub->publish(cloud);
 
     if (nGoodFeatCount>2)
     {
@@ -498,7 +499,7 @@ void Updater::update(Eigen::VectorXd& xk1k,
             {
                 if (tempHw.col(i-1).norm()==0)
                 {
-                    ROS_DEBUG("Hw is rank deficient!");
+                    RCLCPP_DEBUG(mUpdaterNode->get_logger(), "Hw is rank deficient!");
                     N--;
                 }
                 else
@@ -635,7 +636,7 @@ void Updater::update(Eigen::VectorXd& xk1k,
     }
     else
     {
-        ROS_DEBUG("Too few measurements for update!");
+        RCLCPP_DEBUG(mUpdaterNode->get_logger(), "Too few measurements for update!");
 
         xk1k1 = xk1k;
         Pk1k1 = Pk1k;
