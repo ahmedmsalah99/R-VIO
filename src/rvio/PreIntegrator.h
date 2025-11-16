@@ -42,7 +42,7 @@ public:
 
     PreIntegrator(const cv::FileStorage& fsSettings);
     ~PreIntegrator() {
-        logfile.close();
+        // logfile.close();
     }
     void propagate(Eigen::VectorXd& xkk, Eigen::MatrixXd& Pkk, std::list<ImuData*>& lImuData);
 
@@ -64,6 +64,11 @@ private:
     double mnGyroRandomWalkSigma;
     double mnAccelNoiseSigma;
     double mnAccelRandomWalkSigma;
+
+    double wTH;
+    double gmaxTH;
+    double gminTH;
+    double waitTime;
 
     Eigen::Matrix<double,12,12> ImuNoiseMatrix;
 };

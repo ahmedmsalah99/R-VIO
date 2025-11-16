@@ -43,7 +43,7 @@ public:
 
     Updater(const cv::FileStorage& fsSettings);
     ~Updater() {
-        logfile.close();
+        // logfile.close();
     }
     void update(Eigen::VectorXd& xk1k, Eigen::MatrixXd& Pk1k, std::vector<unsigned char>& vFeatTypesForUpdate,
                 std::vector<std::list<cv::Point2f> >& vlFeatMeasForUpdate);
@@ -74,6 +74,7 @@ private:
     ros::NodeHandle mUpdaterNode;
     ros::Publisher mFeatPub;
     double mnPubRate;
+    double imgErrorTh;
 };
 
 } // namespace RVIO

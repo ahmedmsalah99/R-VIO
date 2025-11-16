@@ -40,8 +40,8 @@ Updater::Updater(const cv::FileStorage& fsSettings)
 {
     lastImgMotionTime = ros::Time::now();
     mnCamRate = fsSettings["Camera.fps"];
-    logfile.open("data.csv");
-    logfile << "value" << std::endl;
+    // logfile.open("data.csv");
+    // logfile << "value" << std::endl;
     const float nImageNoiseSigmaX = fsSettings["Camera.sigma_px"];
     const float nImageNoiseSigmaY = fsSettings["Camera.sigma_py"];
     mnImageNoiseSigma = std::max(nImageNoiseSigmaX, nImageNoiseSigmaY);
@@ -64,6 +64,8 @@ Updater::Updater(const cv::FileStorage& fsSettings)
     scaleLandmark.x = fsSettings["Landmark.nScale"];
     scaleLandmark.y = fsSettings["Landmark.nScale"];
     scaleLandmark.z = fsSettings["Landmark.nScale"];
+
+    imgErrorTh = fsSettings["ZUPT.img.error_th"];
 
     colorLandmark.a = 1;
     colorLandmark.r = 0;
@@ -457,9 +459,9 @@ void Updater::update(Eigen::VectorXd& xk1k,
         }
     }
     if (r.size() == 0) { std::cerr << "r is empty\n"; }else{
-    logfile << r.cwiseAbs().maxCoeff() << std::endl;
+    // logfile << r.cwiseAbs().maxCoeff() << std::endl;
         // std::cout << " avg of r is "<< r.cwiseAbs().maxCoeff() << std::endl;
-        if(r.cwiseAbs().maxCoeff() < 0.004){
+        if(r.cwiseAbs().maxCoeff() < imgErrorTh){
             imageMotDet = false;
             // std::cout << "image confirming no motion" << std::endl;
         }else{
@@ -467,8 +469,6 @@ void Updater::update(Eigen::VectorXd& xk1k,
             lastImgMotionTime = ros::Time::now();
         }
     }
-    // if(noMotion)
-    //     r*=0;
     // Visualize features in rviz
     mFeatPub.publish(cloud);
 
