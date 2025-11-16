@@ -369,8 +369,8 @@ void System::MonoVIO()
 
     t3 = mSystemNode->now();
 
-    if (mbRecordOutputs)
-    {
+    // if (mbRecordOutputs)
+    // {
         fPoseResults << std::setprecision(19) << pMeasurements.first->Timestamp << " "
                      << pGk(0) << " " << pGk(1) << " " << pGk(2) << " "
                      << qkG(0) << " " << qkG(1) << " " << qkG(2) << " " << qkG(3) << "\n";
@@ -380,7 +380,7 @@ void System::MonoVIO()
                      << 1e3*(t2.seconds()-t1.seconds()) << " "
                      << 1e3*(t3.seconds()-t2.seconds()) << "\n";
         fTimeResults.flush();
-    }
+    // }
 
     RCLCPP_INFO(mSystemNode->get_logger(), "qkG: %5f, %5f, %5f, %5f", qkG(0), qkG(1), qkG(2), qkG(3));
     RCLCPP_INFO(mSystemNode->get_logger(), "pGk: %5f, %5f, %5f\n", pGk(0), pGk(1), pGk(2));

@@ -28,16 +28,25 @@ namespace RVIO
 InputBuffer::InputBuffer() {}
 
 
+// void InputBuffer::PushImuData(ImuData* pData)
+// {
+//     std::unique_lock<std::mutex> lock(mMutex);
+
+//     mlImuFIFO.push_back(pData);
+
+//     if (!mlImuFIFO.empty())
+//         mlImuFIFO.sort([](const ImuData* a, const ImuData* b){return a->Timestamp<b->Timestamp;});
+// }
 void InputBuffer::PushImuData(ImuData* pData)
 {
     std::unique_lock<std::mutex> lock(mMutex);
 
-    mlImuFIFO.push_back(pData);
+    auto it = mlImuFIFO.begin();
+    while (it != mlImuFIFO.end() && (*it)->Timestamp < pData->Timestamp)
+        ++it;
 
-    if (!mlImuFIFO.empty())
-        mlImuFIFO.sort([](const ImuData* a, const ImuData* b){return a->Timestamp<b->Timestamp;});
+    mlImuFIFO.insert(it, pData);
 }
-
 
 void InputBuffer::PushImageData(ImageData* pData)
 {

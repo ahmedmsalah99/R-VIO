@@ -26,34 +26,38 @@ public:
         imu_opts.callback_group = imu_group_;
 
         // --- QoS ---
-        rclcpp::QoS image_qos(10);
-        image_qos.best_effort();       // usually correct for images
+        // rclcpp::QoS image_qos(10);
+        // image_qos.best_effort();       // usually correct for images
 
-        rclcpp::QoS imu_qos(100);
-        imu_qos.reliable();            // IMU should be reliable
+        // rclcpp::QoS imu_qos(100);
+        // imu_qos.reliable();            // IMU should be reliable
 
+        rclcpp::QoS imu_qos = rclcpp::SensorDataQoS().reliable().keep_last(100);
+        rclcpp::QoS image_qos = rclcpp::SensorDataQoS().best_effort().keep_last(1);
         // --- Subscribers ---
         image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
             "/camera/image_raw",
             image_qos,
-            std::bind(&RVIONode::GrabImage, this, _1),
-            image_opts);
+            std::bind(&RVIONode::GrabImage, this, _1)
+            ,image_opts
+            );
 
         imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
             "/imu",
             imu_qos,
-            std::bind(&RVIONode::GrabImu, this, _1),
-            imu_opts);
+            std::bind(&RVIONode::GrabImu, this, _1)
+            ,imu_opts
+            );
 
 
-        auto period = rclcpp::Duration::from_seconds(1.0 / 50);
+        auto period = rclcpp::Duration::from_seconds(1.0 / 10);
         processing_timer_ = rclcpp::create_timer(
             this->get_node_base_interface(),         // node_base
             this->get_node_timers_interface(),       // node_timers
             this->get_clock(),                       // clock (so it can follow /clock)
             period,                                  // rclcpp::Duration
-            std::bind(&RVIONode::ProcessVIO, this),
-            processing_group_                   // optional callback group
+            std::bind(&RVIONode::ProcessVIO, this)
+            , processing_group_                   // optional callback group
         );
         
 
@@ -68,7 +72,7 @@ public:
 private:
     std::string config_path_;
     std::shared_ptr<RVIO::System> Sys;
-    bool need_processing = false;
+    // std::atomic<bool> need_processing = false;
 
     // Callback groups
     rclcpp::CallbackGroup::SharedPtr image_group_;
@@ -99,7 +103,14 @@ private:
         data->Timestamp = msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9;
 
         Sys->PushImageData(data);
-        need_processing = true;
+        // need_processing = true;
+        // auto start = std::chrono::high_resolution_clock::now();
+        // Sys->MonoVIO();
+        // auto end = std::chrono::high_resolution_clock::now();
+        // // Compute duration in milliseconds
+        // auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        // // Print time
+        // RCLCPP_INFO(this->get_logger(), "MonoVIO took %ld ms", duration);
     }
 
     void GrabImu(const sensor_msgs::msg::Imu::SharedPtr msg)
@@ -116,30 +127,32 @@ private:
             msg->linear_acceleration.y,
             msg->linear_acceleration.z);
 
-        double t = msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9;
+        double currtime = rclcpp::Time(msg->header.stamp).seconds();
+        data->Timestamp = currtime;
+        static double lasttime = -1;
+        if (lasttime!=-1)
+            data->TimeInterval = currtime-lasttime;
+        else
+            data->TimeInterval = 0;
+        lasttime = currtime;
 
-        static double last = -1;
-        data->TimeInterval = (last < 0 ? 0 : t - last);
-        last = t;
-
-        data->Timestamp = t;
         Sys->PushImuData(data);
     }
 
     // --- VIO processing thread implemented with a timer ---
     void ProcessVIO()
     {
-        if(need_processing){
+        // if(need_processing){
             
             auto start = std::chrono::high_resolution_clock::now();
             Sys->MonoVIO();
             auto end = std::chrono::high_resolution_clock::now();
             // Compute duration in milliseconds
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-            need_processing = false;
+            // need_processing = false;
             // Print time
             RCLCPP_INFO(this->get_logger(), "MonoVIO took %ld ms", duration);
-        }
+        // }
     }
 };
 
@@ -160,7 +173,7 @@ int main(int argc, char **argv)
     rclcpp::executors::MultiThreadedExecutor exec;
     exec.add_node(node);
     exec.spin();
-
+    // rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;
 }

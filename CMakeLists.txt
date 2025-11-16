@@ -78,6 +78,7 @@ target_link_libraries(rvio_mono
   ${OpenCV_LIBS}
   Eigen3::Eigen
   ${PROJECT_NAME}
+  tcmalloc_and_profiler
 )
 
 install(TARGETS ${PROJECT_NAME}
