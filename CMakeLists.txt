@@ -17,6 +17,7 @@ find_package(nav_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -g3")
 
 find_package(OpenCV REQUIRED)
 if(NOT OpenCV_FOUND)
