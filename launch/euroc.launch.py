@@ -9,7 +9,7 @@ def generate_launch_description():
     rvio_dir = get_package_share_directory('rvio')
 
     # Default config file
-    config_file = os.path.join(rvio_dir, 'config', 'rvio_iris.yaml')
+    config_file = os.path.join(rvio_dir, 'config', 'rvio_euroc.yaml')
 
     return launch.LaunchDescription([
         # SetEnvironmentVariable(
